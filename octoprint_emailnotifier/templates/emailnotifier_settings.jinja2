@@ -67,5 +67,9 @@
 			</label>
 		</div>
 	</div>
-	
 </form>
+
+<button class="btn" data-bind="click: function() { testEmailConfiguration() }"><i class="icon-spinner icon-spin" data-bind="visible: testActive()"></i> {{ _('Send test notification') }}</button>
+<span data-bind="visible: testResult() && testSuccessful()">{{ _('Sent successfully') }}</span>
+<span data-bind="visible: testResult() && !testSuccessful()">{{ _('Sending failed') }}: <span data-bind="text: testMessage"></span></span>
+

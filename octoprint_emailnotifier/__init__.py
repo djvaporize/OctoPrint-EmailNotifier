@@ -3,11 +3,21 @@ from __future__ import absolute_import
 import os
 import octoprint.plugin
 import yagmail
+import flask
 
 class EmailNotifierPlugin(octoprint.plugin.EventHandlerPlugin,
                           octoprint.plugin.SettingsPlugin,
-                          octoprint.plugin.TemplatePlugin):
+                          octoprint.plugin.TemplatePlugin,
+                          octoprint.plugin.AssetPlugin,
+						  octoprint.plugin.SimpleApiPlugin):
 	
+	#~~ AssetPlugin
+
+	def get_assets(self):
+		return dict(
+			js=["js/emailnotifier.js"]
+		)
+
 	#~~ SettingsPlugin
 
 	def get_settings_defaults(self):
@@ -33,11 +43,11 @@ class EmailNotifierPlugin(octoprint.plugin.EventHandlerPlugin,
 
 	def get_template_configs(self):
 		return [
-			dict(type="settings", name="Email Notifier", custom_bindings=False)
+			dict(type="settings", name="Email Notifier", custom_bindings=True)
 		]
 
 	#~~ EventPlugin
-	
+
 	def on_event(self, event, payload):
 		if event != "PrintDone":
 			return
@@ -96,6 +106,51 @@ class EmailNotifierPlugin(octoprint.plugin.EventHandlerPlugin,
 			)
 		)
 
+	#~~ SimpleApiPlugin
+
+	def get_api_commands(self):
+		return dict(
+			testmail=[]
+		)
+
+	def on_api_command(self, command, data):
+		if command == "testmail":
+			succeeded = True
+
+			title = "OctoPrint Email Notifier Test"
+			content = ["Test notification email"]
+
+			if data["snapshot"]:
+				snapshot_url = self._settings.globalGet(["webcam", "snapshot"])
+				if snapshot_url:
+					try:
+						import urllib
+						filename, headers = urllib.urlretrieve(snapshot_url)
+					except Exception as e:
+						self._logger.exception("Snapshot error (sending email notification without image): %s" % (str(e)))
+						succeeded = False
+					else:
+						content.append({filename: "snapshot.jpg"})
+
+			try:
+				mailer = yagmail.SMTP(user={data["user"]:data["alias"]}, host=data["smtp"])
+
+				# yagmail doesn't seem to like non str objects
+				emails = [str(email.strip()) for email in data['recipients'].split(',')]
+
+				mailer.send(to=emails, subject=title, contents=content, validate_email=False)
+			except Exception as e:
+				# report problem sending email
+				self._logger.exception("Email notification error: %s" % (str(e)))
+				succeeded = False
+				return flask.jsonify(success=succeeded, msg=str(e))
+
+			return flask.jsonify(success=succeeded)
+
+		# else: unknown command response
+		return flask.make_response("Unknown command", 400)
+
+
 __plugin_name__ = "Email Notifier"
 
 def __plugin_load__():
@@ -106,4 +161,3 @@ def __plugin_load__():
 	__plugin_hooks__ = {
 		"octoprint.plugin.softwareupdate.check_config": __plugin_implementation__.get_update_information
 	}
-
